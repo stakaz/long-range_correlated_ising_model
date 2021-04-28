@@ -1,3 +1,4 @@
+using Random
  
 abstract type LatticeModel end
 
