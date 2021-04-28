@@ -1,4 +1,5 @@
 using Random
+using LinearAlgebra
 
 abstract type LatticeBC end
 abstract type LinearBC <: LatticeBC end
@@ -29,6 +30,18 @@ mutable struct IsingModel{T,N,F <: NTuple{N,LinearBC},TJ <: Number,Tβ <: Number
 end
 IsingModel(Λ::Array{T,N}, bc::F, seed::Int = 0) where {T,N,F} = IsingModel(Λ, bc, zero(T), count(i -> i == zero(T), Λ), prod(size(Λ)), 1, 0.1, similar(Λ, Int), Array{Int}(undef, length(Λ)), 1, calc_FT_mode(Λ, unit(Λ, 1)), Random.MersenneTwister(seed))
 
+"""
+    unit(dims, dir::Integer)
+
+Returns an Array as a unit vector in direction `dir` in `dims` dimentions.
+`dims` can be an `Integer` or an `AbstractArray`
+"""
+unit(dims::Integer, dir::Integer) = [dir == i ? 1 : 0 for i ∈ 1:dims]
+unit(Λ::AbstractArray, dir::Integer) = unit(ndims(Λ), dir)
+
+"Precalcultion of the Fourier transformed exponentials with vector `k`"
+calc_FT_mode(Λ::AbstractArray, k::Vector) = return reshape([exp(im * dot([Tuple(CartesianIndices(Λ)[i])...] .- 1, k .* (2π ./ size(Λ)))) for i ∈ eachindex(Λ)], size(Λ)...)
+
 "Energy of the Ising Model `M`"
 function energy(M::IsingModel)
 	s::Int = 0
@@ -48,3 +61,8 @@ function magnetization(M::IsingModel)
 	end
 	return s
 end
+
+
+    IM = IsingModel(rand(Int8[-1,1], 8, 8), (PeriodicBC(), PeriodicBC()), 1)
+
+IM.Λ
