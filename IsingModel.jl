@@ -39,6 +39,72 @@ Returns an Array as a unit vector in direction `dir` in `dims` dimentions.
 unit(dims::Integer, dir::Integer) = [dir == i ? 1 : 0 for i ∈ 1:dims]
 unit(Λ::AbstractArray, dir::Integer) = unit(ndims(Λ), dir)
 
+"""
+		neighbor_back(Λ::AbstractArray, i, dir, bc = x -> x)
+
+Returns the next nearest neigbor of site `i` on a lattice `Λ` backward in direction `dir`.
+When the element is at boundary, applies `bc` to it.
+"""
+@generated function neighbor_back(Λ::AbstractArray{T,N}, i, dir, bc = PeriodicBC()) where {T,N}
+	quote
+		$(Expr(:meta, :inline))
+		@inbounds begin
+			if i[dir] == 1
+				return apply_bc(bc, Λ[Base.Cartesian.@ncall $N CartesianIndex d -> (d ≠ dir ? i[d] : size(Λ, d))])
+			else
+				return Λ[Base.Cartesian.@ncall $N CartesianIndex d -> (d ≠ dir ? i[d] : i[d] - 1)]
+			end
+		end
+	end
+end
+
+"""
+		neighbor_for(Λ::AbstractArray, i, dir, bc = x -> x)
+
+Returns the next nearest neigbor of site `i` on a lattice `Λ` forward in direction `dir`.
+When the element is at boundary, applies `bc` to it.
+"""
+@generated function neighbor_for(Λ::AbstractArray{T,N}, i, dir, bc = PeriodicBC()) where {T,N}
+	quote
+		$(Expr(:meta, :inline))
+		@inbounds begin
+			if i[dir] == size(Λ, dir)
+				return apply_bc(bc, Λ[Base.Cartesian.@ncall $N CartesianIndex d -> (d ≠ dir ? i[d] : 1)])
+			else
+				return Λ[Base.Cartesian.@ncall $N CartesianIndex d -> (d ≠ dir ? i[d] : i[d] + 1)]
+			end
+		end
+	end
+end
+
+"""
+		neighbor_ind_back(Λ::AbstractArray, i, dir)
+
+Returns the `CartesianIndex` of the next nearest neigbor of site `i` on a lattice `Λ` backward in direction `dir`.
+"""
+@generated function neighbor_ind_back(Λ::AbstractArray{T,N}, i, dir) where {T,N}
+	quote
+		$(Expr(:meta, :inline))
+		@inbounds begin
+			return Base.Cartesian.@ncall $N CartesianIndex d -> (d ≠ dir ? i[d] : (i[dir] == 1 ? size(Λ, d) : i[d] - 1))
+		end
+	end
+end
+
+"""
+		neighbor_ind_for(Λ::AbstractArray, i, dir)
+
+Returns the `CartesianIndex` of the next nearest neigbor of site `i` on a lattice `Λ` forward in direction `dir`.
+"""
+@generated function neighbor_ind_for(Λ::AbstractArray{T,N}, i, dir) where {T,N}
+	quote
+		$(Expr(:meta, :inline))
+		@inbounds begin
+			return Base.Cartesian.@ncall $N CartesianIndex d -> (d ≠ dir ? i[d] : (i[dir] == size(Λ, d) ? 1 : i[d] + 1))
+		end
+	end
+end
+
 "Precalcultion of the Fourier transformed exponentials with vector `k`"
 calc_FT_mode(Λ::AbstractArray, k::Vector) = return reshape([exp(im * dot([Tuple(CartesianIndices(Λ)[i])...] .- 1, k .* (2π ./ size(Λ)))) for i ∈ eachindex(Λ)], size(Λ)...)
 
