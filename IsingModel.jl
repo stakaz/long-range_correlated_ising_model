@@ -3,6 +3,7 @@ using LinearAlgebra
 using Colors
 using Crayons
 using Formatting
+using StatsBase: counts, weights
 
 abstract type LatticeBC end
 abstract type LinearBC <: LatticeBC end
@@ -181,6 +182,24 @@ function magnetization(M::IsingModel)
 	return s
 end
 
+"Mean size of the stohastic clusters of the Ising Model `M`"
+stohastic_cluster_mean(M::IsingModel) = (M.V - M.Nempty) / M.max_label
+"Maximal size of the stohastic clusters of the Ising Model `M`"
+stohastic_cluster_max(M::IsingModel) = maximum(counts(M.cΛ, 1:M.max_label))
+
+"Maximal size of the geometric clusters of the Ising Model `M`"
+function geometric_cluster_max(M::IsingModel)
+	M.max_label = hk_cluster!(M.Λ, M.cΛ, M.labels, M.bc, (x, y, i, d) -> (x == y), M.empty_site)
+	M.max_label = hk_relabel!(M.cΛ, M.labels, M.max_label)
+	return stohastic_cluster_max(M::IsingModel)
+end
+### call only AFTER!!! geometric_cluster_max, because the latter generates the clusters
+"Mean size of the geometric clusters of the Ising Model `M`"
+geometric_cluster_mean(M::IsingModel) = stohastic_cluster_mean(M::IsingModel)
+
+"Fourier mode in (1,0,...) direction for the Ising Model `M`"
+correlation_FT1_mode(M::IsingModel) = abs(sum(M.Λ .* M.FT1))^2
+
 """
 hk_find!(x::Int, labels::Array{Int,1})
 
@@ -287,6 +306,135 @@ function sw_update!(M::IsingModel{T}, empty_site::T = zero(T); p_bond = 0.0) whe
 end
 
 
+alias_to_observable = Dict{Symbol,Function}(
+:E => energy,
+:M => magnetization,
+:Csmean => stohastic_cluster_mean,
+:Csmax => stohastic_cluster_max,
+:Cgmean => geometric_cluster_mean,
+:Cgmax => geometric_cluster_max,
+:FT1 => correlation_FT1_mode,
+)
+observable_to_alias = Dict{Function,Symbol}(reverse(p) for p ∈ pairs(alias_to_observable))
+
+"Initialize the `NamedTuple` for the observables given in `aliases` with `Nmeas` number of measurements"
+function init_observables(model::LatticeModel, aliases::Array{Symbol}, Nmeas::Int)
+	return NamedTuple{Tuple(aliases)}(Array{typeof(alias_to_observable[i](model))}(undef, Nmeas) for i ∈ aliases)
+end
+
+"Calculate observables given as Array of `aliases` and store in `D` at row `m`"
+function calc_observables!(M::LatticeModel, D::NamedTuple, m::Int, aliases::Array{Symbol})
+	for a ∈ aliases
+		D[a][m] = alias_to_observable[a](M)
+	end
+end
+
+"""
+	run_simulation_with_β_series(ising::IsingModel; kwargs...)
+
+First, try to find the simulation temperature as the peak of (currently) dlnm observable.
+Uses Optim for that and βmin, βmax as boundaries.
+While simulations for the βsim search uses `100 * L * (d-1)` number of measurements.
+Then performs a simulation at βsim, writes the result and returns the observables.
+
+The saved result consists of:
+- `data`: the measured observables as `Array{NamedTuple}`
+- `ising`: the final state of the model
+- `config`: the parameters passed to `run_simulation` function
+- `total_time`: elapsed time
+
+### Arguments
+- `β_array = 0.2:0.1:0.5`: the β range for the simulation
+-	`Ntherm::Int = 0`: number of thermalization sweeps before each β
+-	`Nmeas::Int = 1`: number of measurements at each β
+-	`Nbetween::Int = 1`: number of sweeps between two subsequent measurements
+-	`obs_aliases::Array{Symbol} = [:E, :M, :Csmax, :Csmean, :Cgmax, :Cgmean, :FT1]`: observables to measure. Possible aliases are: $(keys(alias_to_observable)). `Cgmax` **must** come before `Cgmean` and is needed for the latter.
+- `out_dir = "./observables/"`: directory for the output
+- `name_prefix = "ising_"`: prefix for the generated name
+- `name_suffix = "_raw_observables"`: suffix for the generated name
+- `save_data = true`: whether to save the data
+- `cfg_params`: parameters of the cfg which was used
+"""
+function run_simulation(
+	ising::IsingModel;
+	β_array = 0.2:0.1:0.5,
+	Ntherm::Int = 0,
+	Npretherm::Int = 0,
+	Nmeas::Int = 0,
+	Nbetween::Int = 1,
+	obs_aliases::Array{Symbol} = [:E, :M, :Csmax, :Csmean, :Cgmax, :Cgmean, :FT1],
+	out_dir::String = "./observables/",
+	name_prefix::String = "ising_",
+	name_suffix::String = "_raw_observables",
+	save_data::Bool = true,
+	cfg_params::NamedTuple = NamedTuple(),
+	verbose::Int = 0,
+	compress = true,
+	)
+	### preparation
+	L = size(ising.Λ, 1)
+	dim = length(size(ising.Λ))
+
+	## generate names and directories
+	save_data && mkpath(out_dir)
+	result_file = "$(out_dir)/$(name_prefix)d$(dim)_L$(L)$(name_suffix).jld2"
+	error_file = "$(out_dir)/ERRORS/$(name_prefix)d$(dim)_L$(L)$(name_suffix).dat"
+
+	time1 = time_ns()
+
+	config = (β_array = β_array, Ntherm = Ntherm, Nmeas = Nmeas, Nbetween = Nbetween, Npretherm = Npretherm, obs_aliases = obs_aliases, verbose = verbose)
+
+		### initialization
+	ising.β = β_array[1]
+	p_bond = 1 - exp(-2 * β_array[1] * ising.J)
+	data = Array{NamedTuple}(undef, 0)
+
+	### pre-thermalization
+	verbose ≥ 1 && println("start simulations")
+	verbose ≥ 2 && println("  $Npretherm pre-thermalization sweeps")
+	for sweep ∈ 1:Npretherm; sw_update!(ising; p_bond = p_bond) end
+	
+	for β ∈ β_array
+		verbose ≥ 1 && println("  simulation at β = $β")
+		ising.β = β
+		p_bond = 1 - exp(-2 * β * ising.J)
+
+		data_at_β = init_observables(ising, obs_aliases, Nmeas)
+		### thermalization
+		verbose ≥ 2 && println("    start $Ntherm thermalization sweeps")
+		for sweep ∈ 1:Ntherm
+			sw_update!(ising; p_bond = p_bond)
+		end
+
+		### measurements
+		verbose ≥ 2 && println("    start $Nmeas measurements")
+		for meas ∈ 1:Nmeas
+			for sweep ∈ 1:Nbetween
+				sw_update!(ising; p_bond = p_bond)
+			end
+			calc_observables!(ising, data_at_β, meas, obs_aliases)
+		end
+		push!(data, merge((β = β, L = size(ising.Λ)), data_at_β))
+	end
+	verbose ≥ 1 && println("end simulations")
+
+	time2 = time_ns()
+
+	total_time = (meas_time = (time2 - time1) / 1.0e9)
+
+	if save_data
+		verbose ≥ 1 && println("saving data to $(result_file)")
+		jldopen(result_file, true, true, true, IOStream; compress = compress) do file
+			file["data"] = data
+			file["config"] = config
+			file["total_time"] = total_time
+			file["cfg_params"] = cfg_params
+		end
+		verbose ≥ 1 && println("saving data finished")
+	end
+	return data
+end
+
 IM = IsingModel(rand(Int8[-1,1], 8, 8), (PeriodicBC(), PeriodicBC()), 1)
 
-IM.Λ
+D = run_simulation(IM; β_array = [0.44], Ntherm = 1000, Nmeas = 1000, save_data = false, verbose = 3)
