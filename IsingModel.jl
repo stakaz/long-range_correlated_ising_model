@@ -1,5 +1,8 @@
 using Random
 using LinearAlgebra
+using Colors
+using Crayons
+using Formatting
 
 abstract type LatticeBC end
 abstract type LinearBC <: LatticeBC end
@@ -29,6 +32,56 @@ mutable struct IsingModel{T,N,F <: NTuple{N,LinearBC},TJ <: Number,Tβ <: Number
 	RNG::Random.MersenneTwister
 end
 IsingModel(Λ::Array{T,N}, bc::F, seed::Int = 0) where {T,N,F} = IsingModel(Λ, bc, zero(T), count(i -> i == zero(T), Λ), prod(size(Λ)), 1, 0.1, similar(Λ, Int), Array{Int}(undef, length(Λ)), 1, calc_FT_mode(Λ, unit(Λ, 1)), Random.MersenneTwister(seed))
+
+"""
+    display_lattice(Λ::AbstractArray [, prepare]; kwargs...)
+
+Prints a 1, 2 or 3 dimentional array where each diffenret value gets a unique background color.
+
+# Arguments
+- `prepare::Function=x->"\$(x)"`: apply on each array element before printing, return something printable
+- `title::String=""`: optional title above the array output
+- `minwidth::Int = 2`: minimal width (number of characters) for each array element
+
+"""
+function display_lattice(Λ::AbstractArray, prepare::Function = x -> "$(x)"; title::String = "", minwidth::Int = 2)
+	L = size(Λ)
+	width = max(maximum(length.(prepare.(Λ))), minwidth - 1) + 1
+	unique_species = sort(unique(prepare.(Λ)))
+	colors_raw = distinguishable_colors(length(unique_species);lchoices = range(60; stop = 100, length = 15))
+
+	color_dict = Dict(unique_species[i] => reinterpret(UInt32, convert(RGB24, colors_raw[i])) for i in 1:length(unique_species))
+	fmt = "%$(width)s"
+	println(typeof(Λ))
+	title ≠ "" && println(title)
+	if ndims(Λ) == 1
+		for i in 1:L[1]
+			print(Crayon(background = color_dict[prepare(Λ[i])]), sprintf1(fmt, prepare(Λ[i])))
+			print(Crayon(reset = true), "\n")
+		end
+	elseif ndims(Λ) == 2
+		for i in 1:L[1]
+			for j in 1:L[2]
+				print(Crayon(background = color_dict[prepare(Λ[i,j])]), sprintf1(fmt, prepare(Λ[i,j])))
+			end
+			print(Crayon(reset = true), "\n")
+		end
+	elseif ndims(Λ) == 3
+		for k in 1:L[1]
+			println("level $k")
+			for i in 1:L[2]
+				for j in 1:L[3]
+					print(Crayon(background = color_dict[prepare(Λ[i,j,k])]), sprintf1(fmt, prepare(Λ[i,j,k])))
+				end
+				print(Crayon(reset = true), "\n")
+			end
+			print(Crayon(reset = true), "\n")
+		end
+	else
+		println("display_lattice not defined for ndims = $(ndims(Λ))")
+	end
+	print("\n")
+end
 
 """
 unit(dims, dir::Integer)
