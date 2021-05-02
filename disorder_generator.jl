@@ -58,7 +58,7 @@ function generate_continuous_disorder(dims::Tuple, S::AbstractArray, RNG)
 end
 
 """
-    generate_S(dims::Tuple, C::Function)
+    generate_spectral_density(dims::Tuple, C::Function)
 
 Produces a spectral density array with dimensions `dims` of the array with `C(r)` entries
 
@@ -66,7 +66,7 @@ Produces a spectral density array with dimensions `dims` of the array with `C(r)
 - `dims::Tuple`: dimensions of the desired lattice
 - `C::Function`: desired correlation function `C(r)`
 """
-generate_S(dims::Tuple, C::Function) = real.(fft(generate_corr_matrix(dims, C)))
+generate_spectral_density(dims::Tuple, C::Function) = real.(fft(generate_corr_matrix(dims, C)))
 
 """
     transform_to_discrete_disorder(Λ::AbstractArray, p::Number; T = Int8(1), F = Int8(0))
@@ -84,7 +84,7 @@ The concentration of `T` is given through `p`.
 transform_to_discrete_disorder(Λ::AbstractArray, p::Number; T = Int8(1), F = Int8(0)) = [i ≤ quantile(Normal(0, 1), p) ? T : F for i ∈ Λ]
 
 function generate_discrete_correlated_disorder(dims::Tuple; p::Number = 0.5, a = 1.0, C = (r, a) -> (1 + r^2)^(-a / 2), T = Int8(1), F = Int8(0), RNG = Random.MersenneTwister(1))
-	S = generate_S(dims, r -> C(r, a))
+	S = generate_spectral_density(dims, r -> C(r, a))
 	Λc = generate_continuous_disorder(dims, S, RNG)
 	Λd = transform_to_discrete_disorder(Λc, p; T, F)
 	return Λd

@@ -2,20 +2,6 @@ using Colors
 using Crayons
 using Formatting
 
-export display_lattice
-export neighbor_back
-export neighbor_for
-export neighbor_ind_back
-export neighbor_ind_for
-export unit
-export apply_bc
-
-export LatticeBC
-export LinearBC
-export PeriodicBC
-export APeriodicBC
-export FreeBC
-
 abstract type LatticeBC end
 abstract type LinearBC <: LatticeBC end
 
