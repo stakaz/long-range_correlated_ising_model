@@ -6,6 +6,7 @@ using StatsBase: counts, weights
 
 include("lattice_utils.jl")
 include("hoshen_kopelman_clustering.jl")
+include("disorder_generator.jl")
 
 mutable struct IsingModel{T,N,F <: NTuple{N,LinearBC},TJ <: Number,Tβ <: Number} 
 	Λ::Array{T,N}
@@ -138,7 +139,7 @@ function generate_defected_ising_lattice(L, dim, seed, pd, a; T::Type = Int,)
 end
 
 """
-	run_simulation_with_β_series(ising::IsingModel; kwargs...)
+	run_simulation(ising::IsingModel; kwargs...)
 
 Performs a series of simulations at each temperature from `β_array`.
 Start with a prethermalization and thermalized betwwen each temperature.

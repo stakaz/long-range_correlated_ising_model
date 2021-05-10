@@ -1,5 +1,5 @@
 include("ising_model.jl")
-include("disorder_generator.jl")
+
 
 using QuadGK
 
@@ -19,7 +19,6 @@ V = L^dim
 IM = IsingModel(generate_defected_ising_lattice(L, dim, seed, pd, a), ntuple(d -> PeriodicBC(), dim), seed)
 
 D = run_simulation(IM; β_array = β_array, Npretherm = 1000, Ntherm = 100, Nmeas = 1000, save_data = true, cfg_params = (; L, a, pd, seed, dim), verbose = 1)
-# display_lattice(IM.Λ)
 
 ### calcualte observables
 e_mean = [mean(d.E) / V for d ∈ D.data]
@@ -41,3 +40,13 @@ plot!(β_array, m_mean, label = "m")
 plot!(β_array, u∞.(β_array), label = "e exact")
 plot!(β_array, m∞.(β_array),label = "m exact", xlabel = "β", ylabel = "e, m")
 plot!(twinx(), β_array, χ_mean, label = "χ", legend = :right, ylabel = "χ")
+
+### check correlated disorder 
+IM = IsingModel(generate_defected_ising_lattice(16, 2, 1, 0.2, Inf), ntuple(d -> PeriodicBC(), dim), seed)
+display_lattice(IM.Λ)
+
+IM = IsingModel(generate_defected_ising_lattice(16, 2, 1, 0.2, 2.0), ntuple(d -> PeriodicBC(), dim), seed)
+display_lattice(IM.Λ)
+
+IM = IsingModel(generate_defected_ising_lattice(16, 2, 1, 0.2, 1.0), ntuple(d -> PeriodicBC(), dim), seed)
+display_lattice(IM.Λ)
